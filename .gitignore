@@ -1,4 +1,41 @@
-.env
+# Node (Hardhat, npm, etc)
 node_modules/
 artifacts/
 cache/
+coverage/
+typechain/
+.env
+.env.local
+.env.*.local
+hardhat.log
+
+# Compiled contract output
+*.json
+!hardhat.config.js
+!scripts/*.js
+
+# Go
+*.exe
+*.test
+*.out
+*.log
+*.tmp
+*.prof
+*.coverprofile
+*.pb.go
+
+# Go build cache and vendor
+bin/
+vendor/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+*.iml
+
+# OS
+Thumbs.db
+.DS_Store
