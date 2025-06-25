@@ -29,12 +29,30 @@ const (
 )
 
 var (
+	topicGameWin  = crypto.Keccak256Hash([]byte("Win(address,uint8,uint8)")).Hex()
+	topicGameLoss = crypto.Keccak256Hash([]byte("Loss(address,uint8,uint8)")).Hex()
+)
+
+var (
 	client        *ethclient.Client
 	privateKey    *ecdsa.PrivateKey
 	publicAddr    string
 	tokenInstance *token.Token
 	gameInstance  *game.Game
+	winStreaks    = map[string]int{}
+	bonusAmount   = new(big.Int).Mul(big.NewInt(50), big.NewInt(1e18))
 )
+
+type GameLog struct {
+	Address   string    `json:"address"`
+	Guess     int       `json:"guess"`
+	Winning   int       `json:"winning"`
+	Result    string    `json:"result"`
+	TxHash    string    `json:"txHash"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+var gameLogs []GameLog
 
 type PlayRequest struct {
 	Address string `json:"address"`
@@ -78,7 +96,11 @@ func main() {
 	router.POST("/play", playHandler)
 	router.GET("/mint", mintHandler)
 	router.GET("/balance/:address", balanceHandler)
+	router.GET("/history", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gameLogs)
+	})
 
+	router.StaticFile("/", "./frontend/index.html")
 	router.Run(":8080")
 }
 
@@ -119,13 +141,35 @@ func playHandler(c *gin.Context) {
 	}
 	log.Println("Allowance from sender to Game:", allowance.String())
 
+	allowance, err = tokenInstance.Allowance(nil, common.HexToAddress(publicAddr), common.HexToAddress(gameAddress))
+	if err != nil {
+		log.Println("Allowance check failed:", err)
+	}
+	log.Println("Current allowance:", allowance)
+
 	playTx, err := gameInstance.Play(auth, uint8(req.Guess))
+
 	if err != nil {
 		log.Println("Play error:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "play failed"})
 		return
 	}
 	log.Println("Play tx hash:", playTx.Hash().Hex())
+
+	logEntry := GameLog{
+		Address:   req.Address,
+		Guess:     req.Guess,
+		Winning:   -1,
+		Result:    "submitted",
+		TxHash:    playTx.Hash().Hex(),
+		Timestamp: time.Now(),
+	}
+
+	if playTx != nil {
+		logEntry.TxHash = playTx.Hash().Hex()
+	}
+
+	gameLogs = append(gameLogs, logEntry)
 
 	c.JSON(http.StatusOK, gin.H{
 		"result":    "submitted",
@@ -190,6 +234,35 @@ func watchGameEvents() {
 			log.Println("Subscription error:", err)
 		case vLog := <-logs:
 			log.Printf("New event log received: %+v\n", vLog)
+
+			topic := vLog.Topics[0].Hex()
+
+			switch topic {
+			case topicGameWin:
+				addr := extractAddressFromTopic(vLog.Topics[1])
+				winStreaks[addr]++
+				log.Println("Win for", addr, "- streak:", winStreaks[addr])
+
+				if winStreaks[addr] == 3 {
+					auth, _ := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(chainID))
+					tx, err := tokenInstance.Mint(auth, common.HexToAddress(addr), bonusAmount)
+					if err != nil {
+						log.Println("Bonus mint error:", err)
+					} else {
+						log.Println("Bonus 50 MTK minted to", addr, "tx:", tx.Hash().Hex())
+						winStreaks[addr] = 0
+					}
+				}
+
+			case topicGameLoss:
+				addr := extractAddressFromTopic(vLog.Topics[1])
+				winStreaks[addr] = 0
+				log.Println("Loss for", addr, "- streak reset")
+			}
 		}
 	}
+}
+
+func extractAddressFromTopic(topic common.Hash) string {
+	return common.BytesToAddress(topic.Bytes()[12:]).Hex()
 }

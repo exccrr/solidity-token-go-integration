@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MTK Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input { margin: 5px; }
+    table, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 5px; }
+  </style>
+</head>
+<body>
+  <h1>🎲 MTK Game</h1>
+
+  <label>Address:</label><br>
+  <input type="text" id="address" size="50" value="0x041d733dFEA7Be80a2c2Ba4ca52b52dAa0ceCe2b"><br>
+
+  <label>Guess (1-10):</label><br>
+  <input type="number" id="guess" min="1" max="10"><br>
+
+  <button onclick="play()">Play</button>
+  <button onclick="getBalance()">Check Balance</button>
+  <p id="result"></p>
+  <p id="balance"></p>
+
+  <h2>🧾 History</h2>
+  <table id="history">
+    <thead>
+      <tr>
+        <th>Address</th>
+        <th>Guess</th>
+        <th>Winning</th>
+        <th>Result</th>
+        <th>Tx Hash</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function play() {
+      const address = document.getElementById('address').value;
+      const guess = parseInt(document.getElementById('guess').value);
+      const res = await fetch('/play', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, guess })
+      });
+      const data = await res.json();
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      loadHistory();
+    }
+
+    async function getBalance() {
+      const address = document.getElementById('address').value;
+      const res = await fetch('/balance/' + address);
+      const data = await res.json();
+      document.getElementById('balance').textContent = 'Balance: ' + (parseInt(data.balance) / 1e18) + ' MTK';
+    }
+
+    async function loadHistory() {
+      const res = await fetch('/history');
+      const data = await res.json();
+      const tbody = document.querySelector('#history tbody');
+      tbody.innerHTML = '';
+      for (let row of data.slice().reverse()) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.address}</td>
+          <td>${row.guess}</td>
+          <td>${row.winning === -1 ? '?' : row.winning}</td>
+          <td>${row.result}</td>
+          <td><a href="https://sepolia.etherscan.io/tx/${row.txHash}" target="_blank">${row.txHash.slice(0, 10)}...</a></td>
+          <td>${new Date(row.timestamp).toLocaleTimeString()}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
